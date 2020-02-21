@@ -1,129 +1,72 @@
-import os # to change the working directory
-import pandas as pd 
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import pandas as pd
 import random
 from sklearn.linear_model import LogisticRegression
-from sklearn import metrics, cross_validation
-from sklearn import svm
+from sklearn.svm import SVC, LinearSVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import Perceptron
-from sklearn import tree
+from sklearn.linear_model import SGDClassifier
+from sklearn.tree import DecisionTreeClassifier
 
-plt.style.use('ggplot')
-titanicdirectory = os.chdir("/Users/Caner/Desktop/python/titanic") 
-#os.getcwd() to double check dir. change
+# See more than 5 cols in pycharm
+pd.set_option('display.width', 320)
+pd.set_option('display.max_columns', 50)
 
-####### READING DATA ##########          
-traindf = pd.read_csv('train.csv')
-testdf = pd.read_csv('test.csv')
-results = pd.read_csv('gender_submission.csv')
+
+
+
+# Load data
+results = pd.read_csv("gender_submission.csv")
+testdf_raw = pd.read_csv("test.csv")
+testdf = testdf_raw.copy()
+traindf = pd.read_csv("train.csv")
 result_survived = results["Survived"]
 
-######### EXPLORATORY ANALYSIS ###########
-traindf.info()
 
-survived_ratio = sum(traindf.Survived == 1) / len(traindf) 
-#%38.4
+### FEATURE ENG ###
+# Dropping unnecessary variables ###
+traindf.drop(['Ticket', 'Cabin'], axis=1, inplace=True)
+testdf.drop(['Ticket', 'Cabin'], axis=1, inplace=True)
+combine = [traindf, testdf]
 
-kids = traindf[traindf.Age < 18]
-kids_survived = sum(kids.Survived == 1)/len(kids) 
-#%54
-ages18_36 = traindf[(traindf['Age'] > 18) & (traindf['Age'] <=36)]
-ages18_36_survived = sum(ages18_36.Survived == 1)/len(ages18_36)
-#%39
-ages36_54 = traindf[(traindf['Age'] > 36) & (traindf['Age'] <=54)]
-ages36_54_survived = sum(ages36_54.Survived == 1)/len(ages36_54)
-#%38.6
-agesenior = traindf[(traindf['Age'] > 54)]
-agesenior_survived = sum(agesenior.Survived ==1)/len(agesenior)
-#%31
+# Creating variable from titles
+for dataset in combine:
+	dataset['Title'] = dataset.Name.str.extract(' ([A-Za-z]+)\.', expand=False)
 
-survivebyage = [kids_survived,ages18_36_survived,ages36_54_survived,agesenior_survived]
-x = np.arange(4)
-plt.subplot(2,2,1)
-plt.bar(x, height = survivebyage)
-plt.xticks(x, ['0-18','18-36','36-54','54+'])
-plt.ylabel('Survival Ratio')
-plt.xlabel('Age')
-plt.title('Survival by Age')
-plt.text(x[0]-0.1,survivebyage[0],'{:.1%}'.format(survivebyage[0]))
-plt.text(x[1]-0.1,survivebyage[1],'{:.1%}'.format(survivebyage[1]))
-plt.text(x[2]-0.1,survivebyage[2],'{:.1%}'.format(survivebyage[2]))
-plt.text(x[3]-0.1,survivebyage[3],'{:.1%}'.format(survivebyage[3]))
-# There is a negative relationship between age and survival ratio.
+# before
+# pd.crosstab(traindf['Title'], traindf['Sex'])
 
+# Handling the less common titles
+for dataset in combine:
+	dataset['Title'] = dataset['Title'].replace(['Lady', 'Countess', 'Capt', 'Col', \
+												 'Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
 
-female =traindf[traindf.Sex == 'female']
-female_survived = sum(female.Survived == 1)/len(female)
+	dataset['Title'] = dataset['Title'].replace('Mlle', 'Miss')
+	dataset['Title'] = dataset['Title'].replace('Ms', 'Miss')
+	dataset['Title'] = dataset['Title'].replace('Mme', 'Mrs')
 
-male = traindf[traindf.Sex == 'male']
-male_survived = sum(male.Survived == 1)/len(male)
+# after
+# pd.crosstab(traindf['Title'], traindf['Sex'])
 
-survivebysex = [female_survived,male_survived]
-x = np.arange(2)
-plt.subplot(2,2,2)
-plt.bar(x, height = survivebysex, color = 'c')
-plt.xticks(x,['female','male'])
-plt.ylabel('Survival Ratio')
-plt.xlabel('Sex')
-plt.title('Survival by Sex')
-plt.text(x[0]-0.05,survivebysex[0],'{:.1%}'.format(survivebysex[0]))
-plt.text(x[1]-0.05,survivebysex[1],'{:.1%}'.format(survivebysex[1]))
+# Convert categorigal to ordinal
+title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Rare": 5}
+for dataset in combine:
+	dataset['Title'] = dataset['Title'].map(title_mapping)
+	dataset['Title'] = dataset['Title'].fillna(0)
 
 
+traindf = traindf.drop(['Name', 'PassengerId'], axis=1)
+testdf = testdf.drop(['Name'], axis=1)
+combine = [traindf, testdf]
 
-traindf.groupby('Pclass').count() 
-#passenger counts by class 216,184,491
-
-first_surv = sum(traindf[traindf.Pclass == 1].Survived == 1)/len(traindf[traindf.Pclass == 1])
-#1st class survived ratio
-second_surv = sum(traindf[traindf.Pclass == 2].Survived == 1)/len(traindf[traindf.Pclass == 2])
-#2nd class survived ratio
-third_surv = sum(traindf[traindf.Pclass == 3].Survived == 1)/len(traindf[traindf.Pclass == 3])
-#3rd class survived ratio
-
-survivebyclass = [first_surv,second_surv,third_surv]
-x= np.arange(3)
-plt.subplot(2,2,3)
-plt.bar(x, height = survivebyclass,color = 'm')
-plt.xticks(x,['1st','2nd','3rd'])
-plt.ylabel('Survival Ratio')
-plt.xlabel('Class')
-plt.title('Survival by Class')
-plt.text(x[0]-0.05,survivebyclass[0],'{:.1%}'.format(survivebyclass[0]))
-plt.text(x[1]-0.05,survivebyclass[1],'{:.1%}'.format(survivebyclass[1]))
-plt.text(x[2]-0.05,survivebyclass[2],'{:.1%}'.format(survivebyclass[2]))
-
-embarks = sum(traindf[traindf.Embarked == "S"].Survived == 1)/len(traindf[traindf.Embarked == "S"])
-embarkc = sum(traindf[traindf.Embarked == "C"].Survived == 1)/len(traindf[traindf.Embarked == "C"])
-embarkq = sum(traindf[traindf.Embarked == "Q"].Survived == 1)/len(traindf[traindf.Embarked == "Q"])
-
-survivebyembark = [embarks,embarkc,embarkq]
-x= np.arange(3)
-plt.subplot(2,2,4)
-plt.bar(x, height = survivebyembark, color = 'b')
-plt.xticks(x, ['S','C','Q'])
-plt.ylabel('Survival Ratio')
-plt.xlabel('Embark')
-plt.title('Survival by Embark(boarding location)')
-plt.text(x[0]-0.05,survivebyembark[0],'{:.1%}'.format(survivebyembark[0]))
-plt.text(x[1]-0.05,survivebyembark[1],'{:.1%}'.format(survivebyembark[1]))
-plt.text(x[2]-0.05,survivebyembark[2],'{:.1%}'.format(survivebyembark[2]))
-
-plt.tight_layout()
-
-################################## PREPROCESSING ##################################
-### dropping unnecessary variables ###
-traindf.drop(['PassengerId', 'Name','Ticket','Cabin'],axis = 1, inplace = True)
-testdf.drop(['PassengerId','Name','Ticket','Cabin'],axis = 1, inplace = True)
-### na treatment ###
+# NA treatment
 traindf.Embarked.ffill(inplace = True)
 testdf.Fare.ffill(inplace = True)
-#traindf.Age.fillna(random.gauss(traindf.Age.mean(),traindf.Age.std()),inplace=True)
-#2 values on embarked col forward filled
+
 random.seed(5)
-def ngauss(mu,std,n): 
+# Generates n gaussian numbers
+def ngauss(mu,std,n):
 	container = []
 	for i in range(n):
 		number_generated = round(random.gauss(mu,std))
@@ -136,58 +79,121 @@ def ngauss(mu,std,n):
 			else:
 				ngauss(mu,std,n)
 	return(container)
-#above func. generates n gaussian numbers
+
 missingages_train = ngauss(traindf.Age.mean(),traindf.Age.std(),sum(traindf.Age.isnull()))
 missingages_test =  ngauss(testdf.Age.mean(),testdf.Age.std(),sum(testdf.Age.isnull()))
 
-traindf.loc[traindf.Age.isnull(),'Age'] = missingages_train 
+# Replacing null values with gaussian numbers generated
+traindf.loc[traindf.Age.isnull(),'Age'] = missingages_train
 testdf.loc[testdf.Age.isnull(),'Age'] = missingages_test
-#Replacing null values with gaussian numbers generated
 
-### Categorical Value Transformation ###
+# Categorical Value Transformation ###
 traindf = pd.get_dummies(traindf, columns = ['Sex','Embarked'])
 testdf = pd.get_dummies(testdf, columns = ['Sex','Embarked'])
 
+# At this point dataframes are ready for model fitting
 X_train = traindf.drop('Survived',1)
-y_train = traindf.Survived 
-X_test = testdf
-#At this point dataframes are ready for model fitting.
+y_train = traindf.Survived
+X_test  = testdf.drop("PassengerId", axis=1).copy()
 
+###################
 
-
-############################################### MODEL FITTING ###############################################
-### Logistic Regression ###
+### MODEL FITTING ###
+# Logistic Regression
 logreg = LogisticRegression()
-predicted_log = cross_validation.cross_val_predict(logreg, X_train, y_train, cv=10)
-print (metrics.accuracy_score(y_train, predicted))
-#10 fold cv accuracy score on train data ~80%
-fit = logreg.fit(X_train,y_train)
-test_pred = fit.predict(X_test)
-logreg.score(X_test, result_survived)
-#94% accuracy on the test set !
+logreg.fit(X_train, y_train)
+Y_pred = logreg.predict(X_test)
+acc_log = round(logreg.score(X_train, y_train) * 100, 2)
+acc_log
 
-### Support Vector Machine ###
-svmfit = svm.SVC()
-predicted_svm = cross_validation.cross_val_predict(svmfit, X_train, y_train, cv=10)
-print (metrics.accuracy_score(y_train, predicted_svm))
-#10 fold cv accuracy score on train data ~72% No need to fit to test data.
+# See coefficients of log-reg
+coeff_df = pd.DataFrame(traindf.columns.delete(0))
+coeff_df.columns = ['Feature']
+coeff_df["Correlation"] = pd.Series(logreg.coef_[0])
+coeff_df.sort_values(by='Correlation', ascending=False)
 
-### Perceptron ### 
-perfit = Perceptron()
-predicted_per = cross_validation.cross_val_predict(perfit, X_train, y_train, cv=10)
-print (metrics.accuracy_score(y_train, predicted_per))
-#10 fold cv accuracy score on train data ~41% No need to fit to test data.
 
-### Decision Tree ###
-treefit = tree.DecisionTreeClassifier()
-predicted_tree = cross_validation.cross_val_predict(treefit, X_train, y_train, cv=10)
-print (metrics.accuracy_score(y_train, predicted_tree))
-#10 fold cv accuracy score on train data ~75% Still not better than logistic regression.
+# Support Vector Machines
+svc = SVC()
+svc.fit(X_train, y_train)
+Y_pred = svc.predict(X_test)
+acc_svc = round(svc.score(X_train, y_train) * 100, 2)
+acc_svc
 
-forestfit = tree.DecisionTreeClassifier()
-predicted_forest = cross_validation.cross_val_predict(forestfit, X_train, y_train, cv=10)
-print (metrics.accuracy_score(y_train, predicted_forest))
-#10 fold cv accuracy score on train data ~76% Still not better than logistic regression.
+# k-Nearest Neighbors
+knn = KNeighborsClassifier(n_neighbors = 3)
+knn.fit(X_train, y_train)
+Y_pred = knn.predict(X_test)
+acc_knn = round(knn.score(X_train, y_train) * 100, 2)
+acc_knn
+
+# Gaussian Naive Bayes
+gaussian = GaussianNB()
+gaussian.fit(X_train, y_train)
+Y_pred = gaussian.predict(X_test)
+acc_gaussian = round(gaussian.score(X_train, y_train) * 100, 2)
+acc_gaussian
+
+#Perceptron
+perceptron = Perceptron()
+perceptron.fit(X_train, y_train)
+Y_pred = perceptron.predict(X_test)
+acc_perceptron = round(perceptron.score(X_train, y_train) * 100, 2)
+acc_perceptron
+
+# Linear SVC
+linear_svc = LinearSVC()
+linear_svc.fit(X_train, y_train)
+Y_pred = linear_svc.predict(X_test)
+acc_linear_svc = round(linear_svc.score(X_train, y_train) * 100, 2)
+acc_linear_svc
+
+# Stochastic Gradient Descent
+sgd = SGDClassifier()
+sgd.fit(X_train, y_train)
+Y_pred = sgd.predict(X_test)
+acc_sgd = round(sgd.score(X_train, y_train) * 100, 2)
+acc_sgd
+
+# Decision Tree
+decision_tree = DecisionTreeClassifier()
+decision_tree.fit(X_train, y_train)
+Y_pred = decision_tree.predict(X_test)
+Y_pred_dt = Y_pred.copy()
+acc_decision_tree = round(decision_tree.score(X_train, y_train) * 100, 2)
+acc_decision_tree
+
+
+# Random Forest
+random_forest = RandomForestClassifier(n_estimators=100)
+random_forest.fit(X_train, y_train)
+Y_pred = random_forest.predict(X_test)
+random_forest.score(X_train, y_train)
+acc_random_forest = round(random_forest.score(X_train, y_train) * 100, 2)
+acc_random_forest
+
+models = pd.DataFrame({
+    'Model': ['Support Vector Machines', 'KNN', 'Logistic Regression',
+              'Random Forest', 'Naive Bayes', 'Perceptron',
+              'Stochastic Gradient Decent', 'Linear SVC',
+              'Decision Tree'],
+    'Score': [acc_svc, acc_knn, acc_log,
+              acc_random_forest, acc_gaussian, acc_perceptron,
+              acc_sgd, acc_linear_svc, acc_decision_tree]})
+models.sort_values(by='Score', ascending=False)
+
+
+submission = pd.DataFrame({
+        "PassengerId": testdf_raw["PassengerId"],
+        "Survived": Y_pred_dt
+    })
+
+# submission.to_csv('submission.csv', index=False)
+
+
+
+
+
 
 
 
